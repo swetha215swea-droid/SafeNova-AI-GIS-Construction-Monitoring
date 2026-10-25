@@ -1,0 +1,7 @@
+streamlit
+numpy
+pandas
+Pillow
+folium
+streamlit-folium
+pytest
