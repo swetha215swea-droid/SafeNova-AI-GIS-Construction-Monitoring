@@ -84,6 +84,52 @@ The system architecture, data flow, AI processing approach, GIS integration, and
 
 An open-source license will be added after confirming the project code and third-party component licensing.
 
+## Installation and Setup
+
+### Requirements
+- Python 3.10 or later
+- Git
+- Internet connection for installing dependencies and displaying map tiles
+
+### Steps to Run
+
+1. Clone the repository:
+
+   `git clone https://github.com/swetha215swea-droid/SafeNova-AI-GIS-Construction-Monitoring.git`
+
+2. Open the project folder:
+
+   `cd SafeNova-AI-GIS-Construction-Monitoring`
+
+3. Install the required packages:
+
+   `pip install -r requirements.txt`
+
+4. Start the application:
+
+   `streamlit run app.py`
+
+5. Open the local URL shown in the terminal.
+
+## Features
+
+- Compare earlier and recent construction images.
+- Display approximate pixel differences.
+- Visualize fictional sample alerts on a GIS map.
+- View sample alert records.
+
+## Technical Limitations
+
+The current version uses basic image comparison. It does not yet contain a trained AI model or a verified connection to official building approval records. All sample alerts are illustrative and require human verification.
+
+## Testing
+
+Automated tests are planned. The application should be tested with sample images and checked for errors before demonstration.
+
+## License
+
+This project is released under the MIT License. See the `LICENSE` file for details.
+
 ## 12. Project Status
 
 **Stage:** Initial concept and documentation.
