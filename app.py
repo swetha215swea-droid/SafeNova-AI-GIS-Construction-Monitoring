@@ -53,7 +53,7 @@ with st.sidebar:
     st.divider()
     page = st.radio(
         "WORKSPACE",
-        ["Overview", "Satellite Comparison", "GIS Monitoring", "Alerts", "Reports"],
+        ["Overview", "Satellite Comparison", "Terrain & Soil", "Approval Verification", "GIS Monitoring", "Alerts", "Reports"],
         index=0,
     )
     st.divider()
@@ -110,6 +110,78 @@ def priority_for(pct):
     if pct >= 7:
         return "Medium"
     return "Low"
+
+def read_tabular_upload(uploaded):
+    """Read an uploaded CSV or Excel file into a dataframe."""
+    if uploaded is None:
+        return None
+    try:
+        if uploaded.name.lower().endswith(".csv"):
+            return pd.read_csv(uploaded)
+        return pd.read_excel(uploaded)
+    except Exception as exc:
+        st.error(f"Could not read {uploaded.name}: {exc}")
+        return None
+
+def normalize_column_names(frame):
+    """Normalize column names for more forgiving file matching."""
+    out = frame.copy()
+    out.columns = [str(col).strip().lower().replace("_", " ").replace("-", " ") for col in out.columns]
+    return out
+
+def first_matching_column(frame, candidates):
+    for candidate in candidates:
+        key = candidate.lower().replace("_", " ").replace("-", " ")
+        if key in frame.columns:
+            return key
+    return None
+
+def compare_approval_files(official, observed):
+    """Compare official permit data against field-observed site data."""
+    official = normalize_column_names(official)
+    observed = normalize_column_names(observed)
+    official_id = first_matching_column(official, ["plot id", "plot number", "survey number", "case id", "site id"])
+    observed_id = first_matching_column(observed, ["plot id", "plot number", "survey number", "case id", "site id"])
+    if not official_id or not observed_id:
+        return None, "Both files need a shared identifier column such as Plot ID or Survey Number."
+    official = official.rename(columns={official_id: "match_id"})
+    observed = observed.rename(columns={observed_id: "match_id"})
+    merged = observed.merge(official, on="match_id", how="left", suffixes=("_observed", "_official"), indicator=True)
+    results = []
+    for _, row in merged.iterrows():
+        issues = []
+        if row["_merge"] == "left_only":
+            issues.append("No matching official record")
+        permit_col = first_matching_column(official, ["permit number", "approval number", "permit id"])
+        status_col = first_matching_column(official, ["approval status", "status", "permit status"])
+        approved_floors = first_matching_column(official, ["approved floors", "permitted floors", "sanctioned floors"])
+        observed_floors = first_matching_column(observed, ["observed floors", "actual floors", "constructed floors"])
+        approved_use = first_matching_column(official, ["approved use", "permitted use", "land use"])
+        observed_use = first_matching_column(observed, ["observed use", "actual use", "current use"])
+        if row["_merge"] == "both":
+            if permit_col and (pd.isna(row.get(permit_col)) or str(row.get(permit_col)).strip() == ""):
+                issues.append("Permit number missing")
+            if status_col and str(row.get(status_col, "")).strip().lower() not in ["approved", "valid", "active", "sanctioned"]:
+                issues.append("Approval status needs review")
+            if approved_floors and observed_floors:
+                try:
+                    a = pd.to_numeric(pd.Series([row.get(approved_floors)]), errors="coerce").iloc[0]
+                    o = pd.to_numeric(pd.Series([row.get(observed_floors)]), errors="coerce").iloc[0]
+                    if pd.notna(a) and pd.notna(o) and o > a:
+                        issues.append(f"Observed floors ({o:g}) exceed approved floors ({a:g})")
+                except Exception:
+                    pass
+            if approved_use and observed_use:
+                a_use = str(row.get(approved_use, "")).strip().lower()
+                o_use = str(row.get(observed_use, "")).strip().lower()
+                if a_use and o_use and a_use != "nan" and o_use != "nan" and a_use != o_use:
+                    issues.append("Observed use differs from approved use")
+        results.append({
+            "Plot / Survey ID": row.get("match_id", ""),
+            "Screening Result": "Potential mismatch — verify" if issues else "No mismatch detected in supplied fields",
+            "Evidence / Issues": "; ".join(issues) if issues else "No mismatch found in compared fields",
+        })
+    return pd.DataFrame(results), None
 
 # Keep comparison outputs available across dashboard pages.
 before_file = None
@@ -187,6 +259,81 @@ elif page == "Satellite Comparison":
         st.info(f"Suggested review priority: **{priority}**. This is a configurable demo rule, not a legal determination.")
     else:
         st.info("Upload an earlier and a recent image in the panel above to view before/after images, pixel-change percentage, and highlighted differences.")
+
+elif page == "Terrain & Soil":
+    st.subheader("Elevation, slope & soil screening")
+    st.markdown('<p class="section-note">Upload a site survey CSV or Excel file. This screen identifies terrain and geotechnical factors for engineering review; it does not determine construction legality.</p>', unsafe_allow_html=True)
+    st.markdown("**Expected columns:** Site ID, Latitude, Longitude, Elevation (m), Slope (degrees), Soil Type, Bearing Capacity (kPa), Flood Risk")
+    terrain_file = st.file_uploader("Upload elevation and soil data (.csv, .xlsx)", type=["csv", "xlsx"], key="terrain_upload")
+    if terrain_file:
+        terrain = read_tabular_upload(terrain_file)
+        if terrain is not None:
+            st.dataframe(terrain, hide_index=True, use_container_width=True)
+            normalized = normalize_column_names(terrain)
+            risk_notes = []
+            slope_col = first_matching_column(normalized, ["slope degrees", "slope", "slope deg"])
+            flood_col = first_matching_column(normalized, ["flood risk", "flood zone", "flood prone"])
+            bearing_col = first_matching_column(normalized, ["bearing capacity kpa", "bearing capacity", "soil bearing capacity kpa"])
+            for idx, row in normalized.iterrows():
+                issues = []
+                if slope_col:
+                    slope = pd.to_numeric(pd.Series([row.get(slope_col)]), errors="coerce").iloc[0]
+                    if pd.notna(slope) and slope >= 15:
+                        issues.append("Steep slope — engineering review")
+                if flood_col and str(row.get(flood_col, "")).strip().lower() in ["high", "yes", "true", "flood-prone", "flood prone"]:
+                    issues.append("Flood-risk flag — verify with official hazard maps")
+                if bearing_col:
+                    bearing = pd.to_numeric(pd.Series([row.get(bearing_col)]), errors="coerce").iloc[0]
+                    if pd.notna(bearing) and bearing < 100:
+                        issues.append("Low reported bearing capacity — geotechnical review")
+                risk_notes.append({
+                    "Row": idx + 1,
+                    "Screening Note": "; ".join(issues) if issues else "No trigger in configured screening rules",
+                })
+            st.markdown("### Screening notes")
+            st.dataframe(pd.DataFrame(risk_notes), hide_index=True, use_container_width=True)
+            st.download_button("Download terrain screening notes (CSV)", pd.DataFrame(risk_notes).to_csv(index=False).encode("utf-8"), "safenova_terrain_screening.csv", "text/csv")
+    else:
+        st.info("No real elevation or soil dataset is bundled with this demo. Upload verified survey data to run screening.")
+    st.warning("Elevation and soil flags are engineering/planning indicators, not proof of an unauthorized building. Use official terrain, flood, and geotechnical sources.")
+
+elif page == "Approval Verification":
+    st.subheader("Government approval file comparison")
+    st.markdown('<p class="section-note">Compare an official permit register with observed site-inspection data. Use CSV or Excel files with a shared Plot ID, Survey Number, Case ID, or Site ID.</p>', unsafe_allow_html=True)
+    st.markdown("**Official file columns may include:** Plot ID, Permit Number, Approval Status, Approved Floors, Approved Use.")
+    st.markdown("**Observed file columns may include:** Plot ID, Observed Floors, Observed Use.")
+    official_file = st.file_uploader("Upload official government approval register (.csv, .xlsx)", type=["csv", "xlsx"], key="official_approval_upload")
+    observed_file = st.file_uploader("Upload observed / inspection records (.csv, .xlsx)", type=["csv", "xlsx"], key="observed_site_upload")
+    if official_file and observed_file:
+        official_data = read_tabular_upload(official_file)
+        observed_data = read_tabular_upload(observed_file)
+        if official_data is not None and observed_data is not None:
+            st.markdown("### File preview")
+            preview_left, preview_right = st.columns(2)
+            with preview_left:
+                st.caption("Official approval register")
+                st.dataframe(official_data.head(10), hide_index=True, use_container_width=True)
+            with preview_right:
+                st.caption("Observed site records")
+                st.dataframe(observed_data.head(10), hide_index=True, use_container_width=True)
+            results, error = compare_approval_files(official_data, observed_data)
+            if error:
+                st.error(error)
+            elif results is not None:
+                st.markdown("### Comparison results")
+                st.dataframe(results, hide_index=True, use_container_width=True)
+                possible = int(results["Screening Result"].str.startswith("Potential mismatch").sum())
+                a, b = st.columns(2)
+                a.metric("Sites requiring verification", possible)
+                b.metric("Sites compared", len(results))
+                st.download_button("Download approval comparison (CSV)", results.to_csv(index=False).encode("utf-8"), "safenova_approval_comparison.csv", "text/csv")
+                if possible:
+                    st.warning("Potential mismatches were found. They are not a legal finding; verify original records, property identity, dates, and applicable local rules.")
+                else:
+                    st.success("No mismatches were detected in the supplied fields. This does not guarantee legal compliance.")
+    else:
+        st.info("Upload both files to compare the official approval records with observed site data.")
+    st.caption("Privacy note: only upload records you are authorized to use. For a reliable determination, preserve document dates, issuing authority, plot identity, and audit trail.")
 
 elif page == "GIS Monitoring":
     st.subheader("GIS monitoring map")
