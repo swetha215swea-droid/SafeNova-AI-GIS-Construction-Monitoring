@@ -24,7 +24,7 @@ function App(){
  const counts=useMemo(()=>({High:cases.filter(c=>c.priority==='High').length,Medium:cases.filter(c=>c.priority==='Medium').length,Low:cases.filter(c=>c.priority==='Low').length}),[cases]);
  useEffect(()=>{
    let cancelled=false;
-   fetch((import.meta.env.VITE_API_URL||'')+'/api/alerts').then(r=>{if(!r.ok)throw Error();return r.json()}).then(data=>{if(!cancelled&&Array.isArray(data.alerts)&&data.alerts.length){setCases(data.alerts.map((c,i)=>({...c,id:c.id||c['Case ID']||'SN-'+(i+1),lat:Number(c.lat??c.Latitude??12.927+ i*.001),lng:Number(c.lng??c.Longitude??80.103+i*.001),priority:c.priority||c.Priority||'Medium',status:c.status||c.Status||'Needs review'}));setBackend('connected')}}).catch(()=>{if(!cancelled)setBackend('demo')});
+   fetch((import.meta.env.VITE_API_URL||'')+'/api/alerts').then(r=>{if(!r.ok)throw Error();return r.json()}).then(data=>{if(!cancelled&&Array.isArray(data.alerts)&&data.alerts.length){setCases(data.alerts.map((c,i)=>({...c,id:c.id||c['Case ID']||'SN-'+(i+1),lat:Number(c.lat??c.Latitude??12.927+ i*.001),lng:Number(c.lng??c.Longitude??80.103+i*.001),priority:c.priority||c.Priority||'Medium',status:c.status||c.Status||'Needs review'})));setBackend('connected')}}).catch(()=>{if(!cancelled)setBackend('demo')});
    return ()=>{cancelled=true};
  },[]);
  useEffect(()=>{
