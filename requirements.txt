@@ -6,3 +6,5 @@ folium
 streamlit-folium
 pytest
 openpyxl
+fastapi
+uvicorn[standard]
