@@ -135,3 +135,50 @@ This project is released under the MIT License. See the `LICENSE` file for detai
 **Stage:** Initial concept and documentation.
 
 **Next milestone:** Develop and test a basic working prototype using clearly labelled sample data.
+
+
+## Custom reference-style dashboard (React + Leaflet)
+
+A new React/Vite frontend lives in `frontend/`. It provides a satellite-map layout inspired by the SafeNova dashboard reference, area drawing/editing, priority-coloured demo building footprints, an inspection queue, and a FastAPI adapter in `backend/main.py`. The original Streamlit app remains available as `app.py`.
+
+### Run the API
+
+From the repository root, use Python 3.10+:
+
+```bash
+python -m pip install -r requirements.txt
+uvicorn backend.main:app --reload --port 8000
+```
+
+The API health check is at `http://127.0.0.1:8000/health`.
+
+### Run the React dashboard
+
+In a second terminal:
+
+```bash
+cd frontend
+npm install
+```
+
+Copy `.env.example` to `.env` inside `frontend/` (or create it) with:
+
+```env
+VITE_API_URL=http://127.0.0.1:8000
+```
+
+Then run:
+
+```bash
+npm run dev
+```
+
+Open the local URL printed by Vite. The map needs an internet connection to load Esri World Imagery tiles.
+
+### Current integration status and limitations
+
+- The frontend reads alert records from the FastAPI API. The API currently serves clearly illustrative demo records.
+- Drawn areas can be posted to the API, but are stored in memory and will be lost when the API process restarts.
+- Existing Streamlit image comparison, approval-file comparison, terrain screening, and report exports are preserved in `app.py`; they have not yet been refactored into REST endpoints for the React frontend.
+- Actual soil HSG, elevation, official approval records, trained AI detections, and persistent area storage are not connected in this UI yet. Values are not fabricated; unavailable soil/elevation values are labelled accordingly.
+- Configure a restricted CORS origin and persistent database before production deployment. Alerts are screening aids, not legal findings; authorized human verification is required.
